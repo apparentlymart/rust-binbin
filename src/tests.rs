@@ -58,3 +58,29 @@ fn immediate_only_write_little_endian() {
         ]
     );
 }
+
+#[test]
+fn immediate_only_write_big_endian() {
+    let buf = Vec::<u8>::new();
+    let cursor = std::io::Cursor::new(buf);
+    let mut w = big_endian(cursor);
+    let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
+    w.write(0xfeedfacedeadbeef as u64).unwrap();
+    w.write(0xdeedbead as u32).unwrap();
+    w.write(0x1234 as u16).unwrap();
+    w.write(0xff as u8).unwrap();
+    w.write(&b"hello"[..]).unwrap();
+    w.write(cstr).unwrap();
+    let buf = w.finalize().unwrap().into_inner();
+    assert_eq_hex!(
+        buf,
+        vec![
+            0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, // u64
+            0xde, 0xed, 0xbe, 0xad, // u32
+            0x12, 0x34, // u16
+            0xff, // u8
+            b'h', b'e', b'l', b'l', b'o', // &[u8]
+            b'h', b'o', b'w', b'd', b'y', 0x00, // &std::ffi::CStr
+        ]
+    );
+}
