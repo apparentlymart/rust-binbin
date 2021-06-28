@@ -12,6 +12,9 @@ use std::io::{Result, Seek, Write};
 pub mod endian;
 pub mod pack;
 
+#[cfg(test)]
+mod tests;
+
 use endian::{BigEndian, Endian, LittleEndian};
 
 /// Wraps a seekable writer with extra functions to conveniently write
@@ -67,9 +70,13 @@ where
         }
     }
 
-    pub fn write_u8(&mut self, v: u8) -> Result<()> {
-        self.w.write(std::slice::from_ref(&v))?;
-        Ok(())
+    pub fn write<V: pack::IntoPack>(&mut self, v: V) -> Result<usize> {
+        use pack::Pack;
+        let v = v.into_pack();
+        let l = v.len();
+        let mut buf = vec![0 as u8; l];
+        v.pack_into_slice::<E>(&mut buf[..]);
+        self.w.write(&buf[..])
     }
 
     pub fn pending_label(&'a mut self) -> Label<'a> {
@@ -92,6 +99,11 @@ where
 
     pub fn finalize_value<T>(&'a mut self, value: Value<'a, T>, fin: T) -> T {
         todo!();
+    }
+
+    pub fn finalize(self) -> Result<W> {
+        // TODO: Also finish up all of the deferred values.
+        Ok(self.w)
     }
 }
 
