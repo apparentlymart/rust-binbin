@@ -148,7 +148,8 @@ where
     /// the placeholder will be overwritten.
     pub fn write_placeholder<T>(deferred: Deferred<'a, T>) -> Result<usize>
     where
-        T: pack::FixedLenPack,
+        T: pack::IntoPack,
+        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
     {
         todo!()
     }
@@ -191,7 +192,8 @@ where
     /// the final value.
     pub fn deferred<T>(initial: T) -> Deferred<'a, T>
     where
-        T: pack::FixedLenPack,
+        T: pack::IntoPack,
+        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
     {
         todo!()
     }
@@ -200,7 +202,8 @@ where
     /// using [`deferred`](deferred).
     pub fn resolve<T>(deferred: Deferred<'a, T>, v: T) -> T
     where
-        T: pack::FixedLenPack,
+        T: pack::IntoPack,
+        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
     {
         todo!()
     }
