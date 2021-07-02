@@ -21,28 +21,46 @@ use endian::{BigEndian, Endian, LittleEndian};
 /// function `f`, where writes will be little-endian by default.
 ///
 /// The given function -- generally a closure -- establishes the lifetime for
-/// any deferred values, so that `write_little_endian` can ensure that all
+/// any deferred values, so that `write_le` can ensure that all
 /// deferred values are taken care of before returning.
-pub fn write_little_endian<W, F>(w: &mut W, f: F) -> Result<usize>
+pub fn write_le<W, F>(w: &mut W, f: F) -> Result<usize>
 where
     W: Write + Seek,
     F: FnOnce(&mut Writer<&mut W, LittleEndian>) -> Result<()>,
 {
-    write::<W, F, LittleEndian>(w, f)
+    write::<_, _, LittleEndian>(w, f)
+}
+
+/// Writes arbitrary binary data into a byte vector using the given
+/// function `f`, writing little-endian by default.
+pub fn write_vec_le<F>(into: &mut Vec<u8>, f: F) -> Result<()>
+where
+    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, LittleEndian>) -> Result<()>,
+{
+    write_buf::<_, LittleEndian>(into, f)
 }
 
 /// Writes arbitrary binary data to the given writer `w` using the given
 /// function `f`, where writes will be big-endian by default.
 ///
 /// The given function -- generally a closure -- establishes the lifetime for
-/// any deferred values, so that `write_big_endian` can ensure that all
+/// any deferred values, so that `write_be` can ensure that all
 /// deferred values are taken care of before returning.
-pub fn write_big_endian<W, F>(w: &mut W, f: F) -> Result<usize>
+pub fn write_be<W, F>(w: &mut W, f: F) -> Result<usize>
 where
     W: Write + Seek,
     F: FnOnce(&mut Writer<&mut W, BigEndian>) -> Result<()>,
 {
-    write::<W, F, BigEndian>(w, f)
+    write::<_, _, BigEndian>(w, f)
+}
+
+/// Writes arbitrary binary data into a byte vector using the given
+/// function `f`, writing big-endian by default.
+pub fn write_vec_be<F>(into: &mut Vec<u8>, f: F) -> Result<()>
+where
+    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, BigEndian>) -> Result<()>,
+{
+    write_buf::<_, BigEndian>(into, f)
 }
 
 fn write<W, F, E>(w: &mut W, f: F) -> Result<usize>
@@ -59,6 +77,16 @@ where
     return Ok((end_pos - start_pos) as usize);
 }
 
+fn write_buf<F, E>(into: &mut Vec<u8>, f: F) -> Result<()>
+where
+    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, E>) -> Result<()>,
+    E: Endian,
+{
+    let mut cursor = std::io::Cursor::new(into);
+    write(&mut cursor, f)?;
+    return Ok(());
+}
+
 /// Wraps a seekable writer with extra functions to conveniently write
 /// data in various common binary formats and keep track of labelled offsets
 /// to help calculate section sizes and object positions.
@@ -66,21 +94,14 @@ where
 /// Each writer has an endianness as part of its type, which dictates how it
 /// will write out multi-byte values. The endianness is built into the writer
 /// because most formats exclusively use a single endianness throughout, but
-/// for situations where that isn't true you can use
-/// `to_big_endian` or `to_little_endian` to switch an existing writer to
-/// a different endianness without disturbing anything previously written.
+/// for situations where that isn't true you can use an endian override
+/// for a particular value and thus ignore the writer's default.
 ///
-/// The expected usage pattern for a `Writer` is to create one wrapping a
-/// general seekable writer using either [`little_endian`](little_endian)
-/// or [`big_endian`](big_endian), then write zero or more values into it,
-/// and then to finalize it using method `finalize` to resolve any
-/// forward-declarations and recover the original wrapped writer.
-///
-/// During writing the underlying writer will contain placeholder values for
-/// any forward-declared values, which will then be overwritten with true
-/// values during finalization. If the underlying writer is a file on disk
-/// then other applications may be able to observe the placeholder values if
-/// they happen to inspect the file while it's under construction.
+/// During writing the underlying writer will contain placeholder data for
+/// any deferred values, which will then be overwritten with true values during
+/// finalization. If the underlying writer is a file on disk then other
+/// applications may be able to observe the placeholder values if they happen
+/// to inspect the file while it's under construction.
 pub struct Writer<'a, W, E>
 where
     W: 'a + Seek + Write,
@@ -109,6 +130,16 @@ where
         let mut buf = vec![0 as u8; l];
         v.pack_into_slice::<E>(&mut buf[..]);
         self.w.write(&buf[..])
+    }
+
+    pub fn subregion<F>(&mut self, f: F) -> Result<std::ops::Range<u64>>
+    where
+        F: FnOnce(&mut Self) -> Result<()>,
+    {
+        let start_pos = self.w.stream_position()?;
+        f(self)?;
+        let end_pos = self.w.stream_position()?;
+        Ok(start_pos..end_pos)
     }
 
     pub fn pending_label(&'a mut self) -> Label<'a> {

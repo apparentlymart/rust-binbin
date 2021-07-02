@@ -35,9 +35,8 @@ macro_rules! assert_eq_hex {
 
 #[test]
 fn immediate_only_write_little_endian() {
-    let buf = Vec::<u8>::new();
-    let mut cursor = std::io::Cursor::new(buf);
-    write_little_endian(&mut cursor, |w| {
+    let mut buf = Vec::<u8>::new();
+    write_vec_le(&mut buf, |w| {
         let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
         w.write(0xfeedfacedeadbeef as u64)?;
         w.write(0xdeedbead as u32)?;
@@ -48,7 +47,6 @@ fn immediate_only_write_little_endian() {
         Ok(())
     })
     .unwrap();
-    let buf = cursor.into_inner();
     assert_eq_hex!(
         buf,
         vec![
@@ -64,9 +62,8 @@ fn immediate_only_write_little_endian() {
 
 #[test]
 fn immediate_only_write_big_endian() {
-    let buf = Vec::<u8>::new();
-    let mut cursor = std::io::Cursor::new(buf);
-    write_big_endian(&mut cursor, |w| {
+    let mut buf = Vec::<u8>::new();
+    write_vec_be(&mut buf, |w| {
         let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
         w.write(0xfeedfacedeadbeef as u64)?;
         w.write(0xdeedbead as u32)?;
@@ -77,7 +74,6 @@ fn immediate_only_write_big_endian() {
         Ok(())
     })
     .unwrap();
-    let buf = cursor.into_inner();
     assert_eq_hex!(
         buf,
         vec![
