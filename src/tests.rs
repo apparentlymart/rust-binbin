@@ -36,16 +36,19 @@ macro_rules! assert_eq_hex {
 #[test]
 fn immediate_only_write_little_endian() {
     let buf = Vec::<u8>::new();
-    let cursor = std::io::Cursor::new(buf);
-    let mut w = little_endian(cursor);
-    let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
-    w.write(0xfeedfacedeadbeef as u64).unwrap();
-    w.write(0xdeedbead as u32).unwrap();
-    w.write(0x1234 as u16).unwrap();
-    w.write(0xff as u8).unwrap();
-    w.write(&b"hello"[..]).unwrap();
-    w.write(cstr).unwrap();
-    let buf = w.finalize().unwrap().into_inner();
+    let mut cursor = std::io::Cursor::new(buf);
+    write_little_endian(&mut cursor, |w| {
+        let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
+        w.write(0xfeedfacedeadbeef as u64)?;
+        w.write(0xdeedbead as u32)?;
+        w.write(0x1234 as u16)?;
+        w.write(0xff as u8)?;
+        w.write(&b"hello"[..])?;
+        w.write(cstr)?;
+        Ok(())
+    })
+    .unwrap();
+    let buf = cursor.into_inner();
     assert_eq_hex!(
         buf,
         vec![
@@ -62,16 +65,19 @@ fn immediate_only_write_little_endian() {
 #[test]
 fn immediate_only_write_big_endian() {
     let buf = Vec::<u8>::new();
-    let cursor = std::io::Cursor::new(buf);
-    let mut w = big_endian(cursor);
-    let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
-    w.write(0xfeedfacedeadbeef as u64).unwrap();
-    w.write(0xdeedbead as u32).unwrap();
-    w.write(0x1234 as u16).unwrap();
-    w.write(0xff as u8).unwrap();
-    w.write(&b"hello"[..]).unwrap();
-    w.write(cstr).unwrap();
-    let buf = w.finalize().unwrap().into_inner();
+    let mut cursor = std::io::Cursor::new(buf);
+    write_big_endian(&mut cursor, |w| {
+        let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
+        w.write(0xfeedfacedeadbeef as u64)?;
+        w.write(0xdeedbead as u32)?;
+        w.write(0x1234 as u16)?;
+        w.write(0xff as u8)?;
+        w.write(&b"hello"[..])?;
+        w.write(cstr)?;
+        Ok(())
+    })
+    .unwrap();
+    let buf = cursor.into_inner();
     assert_eq_hex!(
         buf,
         vec![

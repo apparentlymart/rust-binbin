@@ -17,6 +17,48 @@ mod tests;
 
 use endian::{BigEndian, Endian, LittleEndian};
 
+/// Writes arbitrary binary data to the given writer `w` using the given
+/// function `f`, where writes will be little-endian by default.
+///
+/// The given function -- generally a closure -- establishes the lifetime for
+/// any deferred values, so that `write_little_endian` can ensure that all
+/// deferred values are taken care of before returning.
+pub fn write_little_endian<W, F>(w: &mut W, f: F) -> Result<usize>
+where
+    W: Write + Seek,
+    F: FnOnce(&mut Writer<&mut W, LittleEndian>) -> Result<()>,
+{
+    write::<W, F, LittleEndian>(w, f)
+}
+
+/// Writes arbitrary binary data to the given writer `w` using the given
+/// function `f`, where writes will be big-endian by default.
+///
+/// The given function -- generally a closure -- establishes the lifetime for
+/// any deferred values, so that `write_big_endian` can ensure that all
+/// deferred values are taken care of before returning.
+pub fn write_big_endian<W, F>(w: &mut W, f: F) -> Result<usize>
+where
+    W: Write + Seek,
+    F: FnOnce(&mut Writer<&mut W, BigEndian>) -> Result<()>,
+{
+    write::<W, F, BigEndian>(w, f)
+}
+
+fn write<W, F, E>(w: &mut W, f: F) -> Result<usize>
+where
+    W: Write + Seek,
+    F: FnOnce(&mut Writer<&mut W, E>) -> Result<()>,
+    E: Endian,
+{
+    let start_pos = w.stream_position()?;
+    let mut wr = Writer::new(w);
+    f(&mut wr)?;
+    let w = wr.finalize()?;
+    let end_pos = w.stream_position()?;
+    return Ok((end_pos - start_pos) as usize);
+}
+
 /// Wraps a seekable writer with extra functions to conveniently write
 /// data in various common binary formats and keep track of labelled offsets
 /// to help calculate section sizes and object positions.
@@ -46,16 +88,6 @@ where
 {
     w: W,
     _phantom: std::marker::PhantomData<&'a E>,
-}
-
-/// Wraps the given seekable writer into a little-endian binbin Writer.
-pub fn little_endian<'a, W: 'a + Seek + Write>(w: W) -> Writer<'a, W, LittleEndian> {
-    Writer::new(w)
-}
-
-/// Wraps the given seekable writer into a big-endian binbin Writer.
-pub fn big_endian<'a, W: 'a + Seek + Write>(w: W) -> Writer<'a, W, BigEndian> {
-    Writer::new(w)
 }
 
 impl<'a, W, E> Writer<'a, W, E>
@@ -101,7 +133,7 @@ where
         todo!();
     }
 
-    pub fn finalize(self) -> Result<W> {
+    fn finalize(self) -> Result<W> {
         // TODO: Also finish up all of the deferred values.
         Ok(self.w)
     }
