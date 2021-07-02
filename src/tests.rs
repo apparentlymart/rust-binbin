@@ -86,3 +86,31 @@ fn immediate_only_write_big_endian() {
         ]
     );
 }
+
+#[test]
+fn deferred_write_big_endian() {
+    let mut buf = Vec::<u8>::new();
+    write_vec_be(&mut buf, |w| {
+        let defer = w.deferred(0xffffffff as u32);
+        w.write(0xfefefefe as u32)?;
+        w.write_placeholder(defer)?;
+        w.write(0xfefefefe as u32)?;
+        w.write_placeholder(defer)?;
+        w.write(0xfefefefe as u32)?;
+        let fin = w.resolve(defer, 0x12345678)?;
+        w.write(fin)?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq_hex!(
+        buf,
+        vec![
+            0xfe, 0xfe, 0xfe, 0xfe, // immediate
+            0x12, 0x34, 0x56, 0x78, // deferred
+            0xfe, 0xfe, 0xfe, 0xfe, // immediate
+            0x12, 0x34, 0x56, 0x78, // deferred
+            0xfe, 0xfe, 0xfe, 0xfe, // immediate
+            0x12, 0x34, 0x56, 0x78, // final
+        ]
+    );
+}
