@@ -9,12 +9,14 @@
 /// results are known.
 use std::io::{Result, Seek, Write};
 
+pub mod deferred;
 pub mod endian;
 pub mod pack;
 
 #[cfg(test)]
 mod tests;
 
+use deferred::Deferred;
 use endian::{BigEndian, Endian, LittleEndian};
 
 /// Writes arbitrary binary data to the given writer `w` using the given
@@ -73,6 +75,7 @@ where
     let mut wr = Writer::new(w);
     f(&mut wr)?;
     let w = wr.finalize()?;
+    w.flush()?;
     let end_pos = w.stream_position()?;
     return Ok((end_pos - start_pos) as usize);
 }
@@ -123,15 +126,48 @@ where
         }
     }
 
+    /// Writes a value to the current position in the output.
+    ///
+    /// `write` can accept any value that implements
+    /// [`IntoPack`](pack::IntoPack), and will write the result from packing
+    /// the value to the underlying stream.
     pub fn write<V: pack::IntoPack>(&mut self, v: V) -> Result<usize> {
         use pack::Pack;
         let v = v.into_pack();
-        let l = v.len();
+        let l = v.pack_len();
         let mut buf = vec![0 as u8; l];
         v.pack_into_slice::<E>(&mut buf[..]);
         self.w.write(&buf[..])
     }
 
+    /// Writes a placeholder for the given deferred slot to the current
+    /// position in the output.
+    ///
+    /// At some later point you should pass the same deferred slot to
+    /// [`resolve`](resolve) along with its final value, at which point
+    /// the placeholder will be overwritten.
+    pub fn write_placeholder<T>(deferred: Deferred<'a, T>) -> Result<usize>
+    where
+        T: pack::FixedLenPack,
+    {
+        todo!()
+    }
+
+    /// Returns the current write position in the underlying writer.
+    ///
+    /// Use this with [`resolve`](resolve) to resolve a deferred slot that
+    /// ought to contain the offset of whatever new content you are about to
+    /// write.
+    pub fn position(&mut self) -> Result<u64> {
+        self.w.stream_position()
+    }
+
+    /// Creates a region of the output whose final bounds must be known for
+    /// use elsewhere in the output.
+    ///
+    /// If the given function completes successfully, `subregion` returns
+    /// a range describing the start and end positions of the subregion
+    /// in the underlying stream.
     pub fn subregion<F>(&mut self, f: F) -> Result<std::ops::Range<u64>>
     where
         F: FnOnce(&mut Self) -> Result<()>,
@@ -142,55 +178,36 @@ where
         Ok(start_pos..end_pos)
     }
 
-    pub fn pending_label(&'a mut self) -> Label<'a> {
-        todo!();
+    /// Creates a slot for a value whose resolution will come later in
+    /// the process of writing all of the data.
+    ///
+    /// You can use [`write_placeholder`](write_placeholder) to reserve
+    /// an area of the output where the final value will eventually be
+    /// written. The reserved space will initially contain the value
+    /// given in `initial`.
+    ///
+    /// Call [`resolve`](resolve) to set the final value for this slot.
+    /// That will then overwrite any placeholders written earlier with
+    /// the final value.
+    pub fn deferred<T>(initial: T) -> Deferred<'a, T>
+    where
+        T: pack::FixedLenPack,
+    {
+        todo!()
     }
 
-    /// Consumes a previously-created label and sets its final value to
-    /// the current offset, returning that offset.
-    pub fn finalize_label(&'a mut self, label: Label<'a>) -> usize {
-        todo!();
-    }
-
-    pub fn pending_value<T>(&'a mut self, init: T) -> Value<'a, T> {
-        todo!();
-    }
-
-    pub fn update_value<T>(&'a mut self, value: Value<'a, T>, new: T) -> Value<'a, T> {
-        todo!();
-    }
-
-    pub fn finalize_value<T>(&'a mut self, value: Value<'a, T>, fin: T) -> T {
-        todo!();
+    /// Assigns a final value to a deferred data slot previously established
+    /// using [`deferred`](deferred).
+    pub fn resolve<T>(deferred: Deferred<'a, T>, v: T) -> T
+    where
+        T: pack::FixedLenPack,
+    {
+        todo!()
     }
 
     fn finalize(self) -> Result<W> {
         // TODO: Also finish up all of the deferred values.
         Ok(self.w)
-    }
-}
-
-impl<'a, T> Writer<'a, T, LittleEndian>
-where
-    T: Seek + Write,
-{
-    pub fn to_big_endian(self) -> Writer<'a, T, BigEndian> {
-        Writer {
-            w: self.w,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, T> Writer<'a, T, BigEndian>
-where
-    T: Seek + Write,
-{
-    pub fn to_little_endian(self) -> Writer<'a, T, LittleEndian> {
-        Writer {
-            w: self.w,
-            _phantom: std::marker::PhantomData,
-        }
     }
 }
 
@@ -207,53 +224,3 @@ where
         self.w.flush()
     }
 }
-
-pub struct Label<'a> {
-    pe: PendingEntry<'a, usize>,
-}
-
-impl<'a> Pending<'a> for Label<'a> {
-    type Value = usize;
-
-    fn pending_entry(&self) -> PendingEntry<'a, usize> {
-        self.pe
-    }
-}
-
-pub struct Value<'a, T> {
-    pe: PendingEntry<'a, T>,
-    phantom: std::marker::PhantomData<T>,
-}
-
-impl<'a, T: 'a> Pending<'a> for Value<'a, T> {
-    type Value = T;
-
-    fn pending_entry(&self) -> PendingEntry<'a, Self::Value> {
-        self.pe
-    }
-}
-
-pub trait Pending<'a> {
-    type Value: 'a;
-
-    fn pending_entry(&self) -> PendingEntry<'a, Self::Value>;
-}
-
-pub struct PendingEntry<'a, T> {
-    idx: usize,
-
-    // We carry T here just to help Writer provide a type-safe interface,
-    // even though our internal table isn't type-aware.
-    phantom: std::marker::PhantomData<&'a T>,
-}
-
-impl<'a, T> Clone for PendingEntry<'a, T> {
-    fn clone(&self) -> Self {
-        Self {
-            idx: self.idx,
-            phantom: self.phantom,
-        }
-    }
-}
-
-impl<'a, T> Copy for PendingEntry<'a, T> {}
