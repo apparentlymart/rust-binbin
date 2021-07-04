@@ -1,12 +1,83 @@
-/// A utility library for more easily writing out structured data in
-/// arbitrary binary file formats.
-///
-/// This library is particularly suited for formats that include offsets
-/// to other parts of the file contents, or need to specify the size of
-/// sub-sections before producing those subsections. It includes a mechaism
-/// for labelling particular offsets and then including placeholders for
-/// values derived from those offsets which can be updated later once their
-/// results are known.
+//! A utility library for more easily writing out structured data in
+//! arbitrary binary file formats.
+//!
+//! This library is particularly suited for formats that include offsets
+//! to other parts of the file contents, or need to specify the size of
+//! sub-sections before producing those subsections. It includes a mechaism
+//! for labelling particular offsets and then including placeholders for
+//! values derived from those offsets which can be updated later once their
+//! results are known.
+//!
+//! # Example: Write to a vector with little-endian ordering
+//!
+//! ```
+//! # use std::io::Result;
+//! # fn main() -> Result<()> {
+//! let mut buf = Vec::<u8>::new();
+//! binbin::write_vec_le(&mut buf, |w| {
+//!     let header_start = w.position()? as u32;
+//!     let header_len = w.deferred(0 as u32);
+//!     w.write(&b"\x7fELF"[..])?;
+//!     w.write(1 as u8)?; // 32-bit ELF
+//!     w.write(1 as u8)?; // Little-endian ELF
+//!     w.write(1 as u8)?; // ELF header version
+//!     w.write(0 as u8)?; // ABI
+//!     w.skip(8)?;
+//!     w.write(1 as u16)?; // Relocatable
+//!     w.write(0x28 as u16)?; // ARM instruction set
+//!     w.write(1 as u32)?; // ELF version
+//!     w.write(0 as u32)?; // no entry point
+//!     w.write(0 as u32)?; // no program header table
+//!     let section_header_pos = w.write_deferred(0 as u32)?;
+//!     w.write(0 as u32)?; // flags
+//!     w.write_placeholder(header_len)?;
+//!     w.write(0 as u32)?; // size of program header entry (none)
+//!     w.write(0 as u32)?; // number of program header entries (none)
+//!     let section_header_size = w.write_deferred(0 as u32)?;
+//!     let section_header_count = w.write_deferred(0 as u32)?;
+//!     let header_end = w.position()? as u32;
+//!     w.resolve(header_len, header_end - header_start);
+//!     w.write(0 as u32)?; // no string table
+//!
+//!     w.align(4)?;
+//!     let pos = w.position()? as u32;
+//!     w.resolve(section_header_pos, pos)?;
+//!
+//!     // (...and then the rest of an ELF writer...)
+//!     Ok(())
+//! })?;
+//! assert_eq!(buf, vec![
+//!     0x7f, b'E', b'L', b'F', // magic number
+//!     1, 1, 1, 0, // initial header fields
+//!     0, 0, 0, 0, 0, 0, 0, 0, // padding
+//!     0x01, 0x00, // relocatable
+//!     0x28, 0x00, // ARM instruction set
+//!     0x01, 0x00, 0x00, 0x00, // ELF version
+//!     0x00, 0x00, 0x00, 0x00, // entry point
+//!     0x00, 0x00, 0x00, 0x00, // program header table offset
+//!
+//!     // Section header position was deferred and resolved later
+//!     0x40, 0x00, 0x00, 0x00, // section header position
+//!
+//!     0x00, 0x00, 0x00, 0x00, // flags
+//!
+//!     // Header length was deferred and resolved later
+//!     0x3c, 0x00, 0x00, 0x00, // header length
+//!
+//!     0x00, 0x00, 0x00, 0x00, // size of program header entry
+//!     0x00, 0x00, 0x00, 0x00, // number of program header entries
+//!
+//!     // Section header entries were deferred but never resolved,
+//!     // so they retain their placeholder values.
+//!     0x00, 0x00, 0x00, 0x00, // size of section header entry
+//!     0x00, 0x00, 0x00, 0x00, // number of section header entries
+//!
+//!     0x00, 0x00, 0x00, 0x00, // no string table
+//! ]);
+//! # Ok(())
+//! # }
+//! ```
+
 use std::io::{Read, Result, Seek, Write};
 
 /// Representation of values to be determined later.
