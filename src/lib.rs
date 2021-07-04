@@ -116,6 +116,7 @@ where
 {
     w: W,
     map: Vec<Vec<u64>>,
+    pad: u8,
     _phantom: std::marker::PhantomData<&'a E>,
 }
 
@@ -128,6 +129,7 @@ where
         Self {
             w: w,
             map: Vec::new(),
+            pad: 0,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -159,6 +161,26 @@ where
         let size = write_intopack_value::<_, _, E>(&mut self.w, deferred.initial)?;
         self.map[deferred.idx].push(pos);
         return Ok(size);
+    }
+
+    /// Moves the current stream position forward to a position aligned to the
+    /// given number of bytes, writing padding bytes as necessary. Returns the
+    /// number of padding bytes written.
+    ///
+    /// A new `Writer` defaults to using zeros for padding. Use
+    /// [`set_padding`](Self::set_padding) to override the padding byte for
+    /// future writes, if needed.
+    pub fn align(&mut self, n: usize) -> Result<usize> {
+        let pos = self.position()?;
+        let ofs = pos % (n as u64);
+        if ofs == 0 {
+            return Ok(0);
+        }
+        let inc = ((n as u64) - ofs) as usize;
+        for _ in 0..inc {
+            self.w.write(std::slice::from_ref(&self.pad))?;
+        }
+        Ok(inc)
     }
 
     /// Returns the current write position in the underlying writer.
@@ -218,6 +240,13 @@ where
         let result = self.write_resolved_values(deferred, v);
         self.w.seek(std::io::SeekFrom::Start(reset_pos))?;
         result
+    }
+
+    /// Changes the padding value used for future calls to
+    /// [`align`](Self::align), and possibly for other functionality added
+    /// in future that might also create padding.
+    pub fn set_padding(&mut self, v: u8) {
+        self.pad = v;
     }
 
     fn write_resolved_values<T>(&mut self, deferred: Deferred<'a, T>, v: T) -> Result<T>

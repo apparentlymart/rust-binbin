@@ -114,3 +114,27 @@ fn deferred_write_big_endian() {
         ]
     );
 }
+
+#[test]
+fn align() {
+    let mut buf = Vec::<u8>::new();
+    write_vec_be(&mut buf, |w| {
+        w.write(0x45 as u8)?;
+        w.set_padding(0x3d);
+        w.align(4)?;
+        w.write(0xfefefefe as u32)?;
+        w.align(4)?; // already aligned, so does nothing
+        w.write(0x67676767 as u32)?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq_hex!(
+        buf,
+        vec![
+            0x45, // initial byte
+            0x3d, 0x3d, 0x3d, // alignment padding
+            0xfe, 0xfe, 0xfe, 0xfe, // first u32
+            0x67, 0x67, 0x67, 0x67, // second u32
+        ]
+    );
+}
