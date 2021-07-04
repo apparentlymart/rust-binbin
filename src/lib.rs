@@ -197,10 +197,15 @@ where
             return Ok(0);
         }
         let inc = ((n as u64) - ofs) as usize;
-        for _ in 0..inc {
+        self.skip(inc)
+    }
+
+    /// Inserts the given number of bytes of padding.
+    pub fn skip(&mut self, count: usize) -> Result<usize> {
+        for _ in 0..count {
             self.w.write(std::slice::from_ref(&self.pad))?;
         }
-        Ok(inc)
+        Ok(count)
     }
 
     /// Returns the current write position in the underlying writer.
