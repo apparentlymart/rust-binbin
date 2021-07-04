@@ -170,6 +170,19 @@ where
         return Ok(size);
     }
 
+    /// A shorthand combining [`deferred`](Self::deferred) and
+    /// [`write_placeholder`](Self::write_placeholder), to create a new
+    /// deferred slot and write a placeholder for it in a single call.
+    pub fn write_deferred<T>(&mut self, initial: T) -> Result<Deferred<'a, T>>
+    where
+        T: pack::IntoPack + Copy,
+        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
+    {
+        let ret = self.deferred(initial);
+        self.write_placeholder(ret)?;
+        Ok(ret)
+    }
+
     /// Moves the current stream position forward to a position aligned to the
     /// given number of bytes, writing padding bytes as necessary. Returns the
     /// number of padding bytes written.
