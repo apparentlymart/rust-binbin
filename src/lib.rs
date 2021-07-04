@@ -189,7 +189,7 @@ where
 /// writer and treat the result as invalid.
 pub struct Writer<'a, W, E>
 where
-    W: 'a + Seek + Write,
+    W: 'a + Write,
     E: Endian,
 {
     w: W,
@@ -198,9 +198,10 @@ where
     _phantom: std::marker::PhantomData<&'a E>,
 }
 
+/// Methods that only write to the current position in the underlying stream.
 impl<'a, W, E> Writer<'a, W, E>
 where
-    W: Seek + Write,
+    W: Write,
     E: Endian,
 {
     fn new(w: W) -> Self {
@@ -221,37 +222,40 @@ where
         write_intopack_value::<_, _, E>(&mut self.w, v)
     }
 
-    /// Writes a placeholder for the given deferred slot to the current
-    /// position in the output.
-    ///
-    /// At some later point you should pass the same deferred slot to
-    /// [`resolve`](Self::resolve) along with its final value, at which point
-    /// the placeholder will be overwritten.
-    pub fn write_placeholder<T>(&mut self, deferred: Deferred<'a, T>) -> Result<usize>
-    where
-        T: pack::IntoPack,
-        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
-    {
-        // We write the slot's initial value for now, but also track
-        // in self.map where this was so that resolving it later can
-        // overwrite with the final value.
-        let pos = self.position()?;
-        let size = write_intopack_value::<_, _, E>(&mut self.w, deferred.initial)?;
-        self.map[deferred.idx].push(pos);
-        return Ok(size);
+    /// Inserts the given number of bytes of padding.
+    pub fn skip(&mut self, count: usize) -> Result<usize> {
+        for _ in 0..count {
+            self.w.write(std::slice::from_ref(&self.pad))?;
+        }
+        Ok(count)
     }
 
-    /// A shorthand combining [`deferred`](Self::deferred) and
-    /// [`write_placeholder`](Self::write_placeholder), to create a new
-    /// deferred slot and write a placeholder for it in a single call.
-    pub fn write_deferred<T>(&mut self, initial: T) -> Result<Deferred<'a, T>>
-    where
-        T: pack::IntoPack + Copy,
-        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
-    {
-        let ret = self.deferred(initial);
-        self.write_placeholder(ret)?;
-        Ok(ret)
+    /// Changes the padding value used for future calls to
+    /// [`align`](Self::align), and possibly for other functionality added
+    /// in future that might also create padding.
+    pub fn set_padding(&mut self, v: u8) {
+        self.pad = v;
+    }
+
+    fn finalize(mut self) -> Result<W> {
+        self.w.flush()?;
+        Ok(self.w)
+    }
+}
+
+/// Methods that use [`std::io::Seek`](std::io::Seek).
+impl<'a, W, E> Writer<'a, W, E>
+where
+    W: Seek + Write,
+    E: Endian,
+{
+    /// Returns the current write position in the underlying writer.
+    ///
+    /// Use this with [`resolve`](Self::resolve) to resolve a deferred slot that
+    /// ought to contain the offset of whatever new content you are about to
+    /// write.
+    pub fn position(&mut self) -> Result<u64> {
+        self.w.stream_position()
     }
 
     /// Moves the current stream position forward to a position aligned to the
@@ -269,23 +273,6 @@ where
         }
         let inc = ((n as u64) - ofs) as usize;
         self.skip(inc)
-    }
-
-    /// Inserts the given number of bytes of padding.
-    pub fn skip(&mut self, count: usize) -> Result<usize> {
-        for _ in 0..count {
-            self.w.write(std::slice::from_ref(&self.pad))?;
-        }
-        Ok(count)
-    }
-
-    /// Returns the current write position in the underlying writer.
-    ///
-    /// Use this with [`resolve`](Self::resolve) to resolve a deferred slot that
-    /// ought to contain the offset of whatever new content you are about to
-    /// write.
-    pub fn position(&mut self) -> Result<u64> {
-        self.w.stream_position()
     }
 
     /// Creates a region of the output whose final bounds must be known for
@@ -325,6 +312,39 @@ where
         return deferred::Deferred::new(next_idx, initial);
     }
 
+    /// Writes a placeholder for the given deferred slot to the current
+    /// position in the output.
+    ///
+    /// At some later point you should pass the same deferred slot to
+    /// [`resolve`](Self::resolve) along with its final value, at which point
+    /// the placeholder will be overwritten.
+    pub fn write_placeholder<T>(&mut self, deferred: Deferred<'a, T>) -> Result<usize>
+    where
+        T: pack::IntoPack,
+        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
+    {
+        // We write the slot's initial value for now, but also track
+        // in self.map where this was so that resolving it later can
+        // overwrite with the final value.
+        let pos = self.position()?;
+        let size = write_intopack_value::<_, _, E>(&mut self.w, deferred.initial)?;
+        self.map[deferred.idx].push(pos);
+        return Ok(size);
+    }
+
+    /// A shorthand combining [`deferred`](Self::deferred) and
+    /// [`write_placeholder`](Self::write_placeholder), to create a new
+    /// deferred slot and write a placeholder for it in a single call.
+    pub fn write_deferred<T>(&mut self, initial: T) -> Result<Deferred<'a, T>>
+    where
+        T: pack::IntoPack + Copy,
+        <T as pack::IntoPack>::PackType: pack::FixedLenPack,
+    {
+        let ret = self.deferred(initial);
+        self.write_placeholder(ret)?;
+        Ok(ret)
+    }
+
     /// Assigns a final value to a deferred data slot previously established
     /// using [`deferred`](deferred).
     pub fn resolve<T>(&mut self, deferred: Deferred<'a, T>, v: T) -> Result<T>
@@ -336,13 +356,6 @@ where
         let result = self.write_resolved_values(deferred, v);
         self.w.seek(std::io::SeekFrom::Start(reset_pos))?;
         result
-    }
-
-    /// Changes the padding value used for future calls to
-    /// [`align`](Self::align), and possibly for other functionality added
-    /// in future that might also create padding.
-    pub fn set_padding(&mut self, v: u8) {
-        self.pad = v;
     }
 
     fn write_resolved_values<T>(&mut self, deferred: Deferred<'a, T>, v: T) -> Result<T>
@@ -357,13 +370,10 @@ where
         }
         Ok(v)
     }
-
-    fn finalize(mut self) -> Result<W> {
-        self.w.flush()?;
-        Ok(self.w)
-    }
 }
 
+/// Methods that use [`std::io::Read`](std::io::Read) and
+/// [`std::io::Seek`](std::io::Seek).
 impl<'a, W, E> Writer<'a, W, E>
 where
     W: Seek + Write + Read,

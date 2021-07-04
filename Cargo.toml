@@ -1,7 +1,14 @@
 [package]
 name = "binbin"
+description = "Create structured binary files in arbitrary formats"
+keywords = ["binary", "packing", "serialization"]
+categories = ["encoding"]
 version = "0.1.0"
 authors = ["Martin Atkins <mart@degeneration.co.uk>"]
 edition = "2018"
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/apparentlymart/rust-binbin"
+repository = "https://github.com/apparentlymart/rust-binbin"
 
 [dependencies]
