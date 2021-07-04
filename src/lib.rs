@@ -9,8 +9,13 @@
 /// results are known.
 use std::io::{Result, Seek, Write};
 
+/// Representation of values to be determined later.
 pub mod deferred;
+
+/// Types for representing endianness.
 pub mod endian;
+
+/// Traits for serializing data for [`Writer::write`](Writer::write).
 pub mod pack;
 
 #[cfg(test)]
@@ -140,7 +145,7 @@ where
     /// position in the output.
     ///
     /// At some later point you should pass the same deferred slot to
-    /// [`resolve`](resolve) along with its final value, at which point
+    /// [`resolve`](Self::resolve) along with its final value, at which point
     /// the placeholder will be overwritten.
     pub fn write_placeholder<T>(&mut self, deferred: Deferred<'a, T>) -> Result<usize>
     where
@@ -158,7 +163,7 @@ where
 
     /// Returns the current write position in the underlying writer.
     ///
-    /// Use this with [`resolve`](resolve) to resolve a deferred slot that
+    /// Use this with [`resolve`](Self::resolve) to resolve a deferred slot that
     /// ought to contain the offset of whatever new content you are about to
     /// write.
     pub fn position(&mut self) -> Result<u64> {
@@ -184,12 +189,12 @@ where
     /// Creates a slot for a value whose resolution will come later in
     /// the process of writing all of the data.
     ///
-    /// You can use [`write_placeholder`](write_placeholder) to reserve
+    /// You can use [`write_placeholder`](Self::write_placeholder) to reserve
     /// an area of the output where the final value will eventually be
     /// written. The reserved space will initially contain the value
     /// given in `initial`.
     ///
-    /// Call [`resolve`](resolve) to set the final value for this slot.
+    /// Call [`resolve`](Self::resolve) to set the final value for this slot.
     /// That will then overwrite any placeholders written earlier with
     /// the final value.
     pub fn deferred<T>(&mut self, initial: T) -> Deferred<'a, T>
@@ -234,15 +239,12 @@ where
     }
 }
 
-pub fn write_intopack_value<W: Write, V: pack::IntoPack, E: Endian>(
-    mut w: W,
-    v: V,
-) -> Result<usize> {
+fn write_intopack_value<W: Write, V: pack::IntoPack, E: Endian>(mut w: W, v: V) -> Result<usize> {
     let v = v.into_pack();
     write_pack_value::<_, _, E>(&mut w, &v)
 }
 
-pub fn write_pack_value<W: Write, V: pack::Pack, E: Endian>(w: &mut W, v: &V) -> Result<usize> {
+fn write_pack_value<W: Write, V: pack::Pack, E: Endian>(w: &mut W, v: &V) -> Result<usize> {
     let l = v.pack_len();
     let mut buf = vec![0 as u8; l];
     v.pack_into_slice::<E>(&mut buf[..]);

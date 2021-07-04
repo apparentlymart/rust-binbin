@@ -236,8 +236,8 @@ impl Pack for &[u8] {
 /// selected for the writer these values are passed to.
 ///
 /// `EndianOverride` is the return type for both
-/// [`to_little_endian`](to_little_endian) and
-/// [`to_big_endian`](to_big_endian).
+/// [`as_little_endian`](as_little_endian) and
+/// [`as_big_endian`](as_big_endian).
 pub struct EndianOverride<T: Pack, E: Endian> {
     v: T,
     phantom: std::marker::PhantomData<E>,

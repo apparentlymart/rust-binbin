@@ -1,7 +1,15 @@
+/// A sealed trait that has only [`LittleEndian`](LittleEndian) and
+/// [`BigEndian`](BigEndian) as its implementations.
 pub trait Endian: private::Sealed {
+    /// Writes the least significant `into.len()` bytes from `v` into the
+    /// buffer that `into` refers to.
     fn write_integer(v: u64, into: &mut [u8]);
 }
 
+/// Selects little-endian encoding in type parameters that represent selectable
+/// endianness.
+///
+/// There are no values of this type.
 pub enum LittleEndian {}
 
 impl Endian for LittleEndian {
@@ -13,6 +21,10 @@ impl Endian for LittleEndian {
     }
 }
 
+/// Selects big-endian encoding in type parameters that represent selectable
+/// endianness.
+///
+/// There are no values of this type.
 pub enum BigEndian {}
 
 impl Endian for BigEndian {
