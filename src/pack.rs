@@ -207,28 +207,65 @@ impl Pack for &std::ffi::CStr {
     }
 }
 
-// `[u8]` values pack by just copying the bytes verbatim into the output
-// buffer.
-impl Pack for [u8] {
+/// `[T]` values pack by packing each element of the array in sequence.
+impl<T> Pack for [T]
+where
+    T: FixedLenPack,
+{
     fn pack_len(&self) -> usize {
-        self.len()
+        self.len() * <T as FixedLenPack>::PACK_LEN
     }
 
     fn pack_into_slice<E: Endian>(&self, buf: &mut [u8]) {
-        buf.copy_from_slice(self);
+        let elem_len = <T as FixedLenPack>::PACK_LEN;
+        for (i, v) in self.iter().enumerate() {
+            let idx = elem_len * i;
+            let s = &mut buf[idx..idx + elem_len];
+            v.pack_into_slice::<E>(s);
+        }
     }
 }
 
-// `&[u8]` values pack by just copying the bytes verbatim into the output
-// buffer.
-impl Pack for &[u8] {
+/// `&[T]` values pack by packing each element of the slice in sequence.
+impl<T> Pack for &[T]
+where
+    T: FixedLenPack,
+{
     fn pack_len(&self) -> usize {
-        <[u8]>::len(self)
+        self.len() * <T as FixedLenPack>::PACK_LEN
     }
 
     fn pack_into_slice<E: Endian>(&self, buf: &mut [u8]) {
-        buf.copy_from_slice(self);
+        let elem_len = <T as FixedLenPack>::PACK_LEN;
+        for (i, v) in self.iter().enumerate() {
+            let idx = elem_len * i;
+            let s = &mut buf[idx..idx + elem_len];
+            v.pack_into_slice::<E>(s);
+        }
     }
+}
+
+impl<T1, T2> Pack for (T1, T2)
+where
+    T1: Pack,
+    T2: Pack,
+{
+    fn pack_len(&self) -> usize {
+        self.0.pack_len() + self.1.pack_len()
+    }
+
+    fn pack_into_slice<E: Endian>(&self, buf: &mut [u8]) {
+        self.0.pack_into_slice::<E>(&mut buf[..self.0.pack_len()]);
+        self.1.pack_into_slice::<E>(&mut buf[self.0.pack_len()..]);
+    }
+}
+
+impl<T1, T2> FixedLenPack for (T1, T2)
+where
+    T1: FixedLenPack,
+    T2: FixedLenPack,
+{
+    const PACK_LEN: usize = T1::PACK_LEN + T2::PACK_LEN;
 }
 
 /// A special [`Pack`](Pack) implementation that forces a particular
