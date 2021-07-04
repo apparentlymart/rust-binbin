@@ -7,7 +7,7 @@
 /// for labelling particular offsets and then including placeholders for
 /// values derived from those offsets which can be updated later once their
 /// results are known.
-use std::io::{Result, Seek, Write};
+use std::io::{Read, Result, Seek, Write};
 
 /// Representation of values to be determined later.
 pub mod deferred;
@@ -17,6 +17,9 @@ pub mod endian;
 
 /// Traits for serializing data for [`Writer::write`](Writer::write).
 pub mod pack;
+
+/// Types used with [`Writer::derive`](Writer::derive).
+pub mod derive;
 
 #[cfg(test)]
 mod tests;
@@ -109,6 +112,10 @@ where
 /// finalization. If the underlying writer is a file on disk then other
 /// applications may be able to observe the placeholder values if they happen
 /// to inspect the file while it's under construction.
+///
+/// If any operation on a `Writer` returns an error, the underlying stream is
+/// left in an undefined state and the user should cease further use of the
+/// writer and treat the result as invalid.
 pub struct Writer<'a, W, E>
 where
     W: 'a + Seek + Write,
@@ -265,6 +272,41 @@ where
     fn finalize(mut self) -> Result<W> {
         self.w.flush()?;
         Ok(self.w)
+    }
+}
+
+impl<'a, W, E> Writer<'a, W, E>
+where
+    W: Seek + Write + Read,
+    E: Endian,
+{
+    /// Derive a value from an already-written region of the underlying
+    /// stream.
+    ///
+    /// This function is available only for streams that implement
+    /// [`Read`](Read) in addition to the usually-required [`Write`](Write)
+    /// and [`Seek`](Seek).
+    ///
+    /// The given function recieves a reader over the requested region, and
+    /// can return any value derived from the contents of that region.
+    /// For example, some binary formats include checksums to help with
+    /// error detection, and you could potentially use `derive` over the
+    /// relevant subregion to calculate such a checksum.
+    pub fn derive<F, T>(&mut self, rng: std::ops::Range<u64>, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut derive::DeriveRead<W>) -> Result<T>,
+    {
+        if rng.end < rng.start {
+            return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        }
+        let len = rng.end - rng.start;
+        let after_pos = self.position()?;
+        self.w.seek(std::io::SeekFrom::Start(rng.start))?;
+        let w = &mut self.w;
+        let mut lr = derive::DeriveRead::new(w, len);
+        let ret = f(&mut lr);
+        self.w.seek(std::io::SeekFrom::Start(after_pos))?;
+        return ret;
     }
 }
 

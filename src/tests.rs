@@ -138,3 +138,30 @@ fn align() {
         ]
     );
 }
+
+#[test]
+fn derive() {
+    let mut buf = Vec::<u8>::new();
+    write_vec_be(&mut buf, |w| {
+        w.write(0x01 as u8)?;
+        w.write(0x02 as u8)?;
+        let sum = w.derive(0..2, |r| {
+            use std::io::Read;
+            let mut buf: [u8; 2] = [0, 0];
+            r.read(&mut buf)?;
+
+            let mut buf2: [u8; 1] = [0];
+            if let Ok(n) = r.read(&mut buf2) {
+                if n != 0 {
+                    panic!("second read should not succeed");
+                }
+            }
+
+            Ok(buf[0] + buf[1])
+        })?;
+        w.write(sum)?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq_hex!(buf, vec![0x01, 0x02, 0x03]);
+}
