@@ -107,7 +107,7 @@ use endian::{BigEndian, Endian, LittleEndian};
 pub fn write_le<W, F, R>(w: &mut W, f: F) -> Result<R>
 where
     W: Write + Seek,
-    F: FnOnce(&mut Writer<&mut W, LittleEndian>) -> Result<R>,
+    for<'w> F: FnOnce(&mut Writer<'w, &mut W, LittleEndian>) -> Result<R>,
 {
     write::<_, _, LittleEndian, _>(w, f)
 }
@@ -116,7 +116,8 @@ where
 /// function `f`, writing little-endian by default.
 pub fn write_vec_le<F, R>(into: &mut Vec<u8>, f: F) -> Result<R>
 where
-    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, LittleEndian>) -> Result<R>,
+    for<'w> F:
+        FnOnce(&mut Writer<'w, &mut std::io::Cursor<&mut Vec<u8>>, LittleEndian>) -> Result<R>,
 {
     write_vec::<_, LittleEndian, _>(into, f)
 }
@@ -130,7 +131,7 @@ where
 pub fn write_be<W, F, R>(w: &mut W, f: F) -> Result<R>
 where
     W: Write + Seek,
-    F: FnOnce(&mut Writer<&mut W, BigEndian>) -> Result<R>,
+    for<'w> F: FnOnce(&mut Writer<'w, &mut W, BigEndian>) -> Result<R>,
 {
     write::<_, _, BigEndian, _>(w, f)
 }
@@ -139,7 +140,7 @@ where
 /// function `f`, writing big-endian by default.
 pub fn write_vec_be<F, R>(into: &mut Vec<u8>, f: F) -> Result<R>
 where
-    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, BigEndian>) -> Result<R>,
+    for<'w> F: FnOnce(&mut Writer<'w, &mut std::io::Cursor<&mut Vec<u8>>, BigEndian>) -> Result<R>,
 {
     write_vec::<_, BigEndian, _>(into, f)
 }
@@ -149,7 +150,7 @@ where
 pub fn write<W, F, E, R>(w: &mut W, f: F) -> Result<R>
 where
     W: Write + Seek,
-    F: FnOnce(&mut Writer<&mut W, E>) -> Result<R>,
+    for<'w> F: FnOnce(&mut Writer<'w, &mut W, E>) -> Result<R>,
     E: Endian,
 {
     let mut wr = Writer::new(w);
@@ -163,7 +164,7 @@ where
 /// parameter.
 pub fn write_vec<F, E, R>(into: &mut Vec<u8>, f: F) -> Result<R>
 where
-    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, E>) -> Result<R>,
+    for<'w> F: FnOnce(&mut Writer<'w, &mut std::io::Cursor<&mut Vec<u8>>, E>) -> Result<R>,
     E: Endian,
 {
     let mut cursor = std::io::Cursor::new(into);

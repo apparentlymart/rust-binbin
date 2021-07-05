@@ -36,7 +36,7 @@ macro_rules! assert_eq_hex {
 #[test]
 fn immediate_only_write_little_endian() {
     let mut buf = Vec::<u8>::new();
-    write_vec_le(&mut buf, |w| {
+    let got_ret = write_vec_le(&mut buf, |w| {
         let cstr = std::ffi::CStr::from_bytes_with_nul(b"howdy\0").unwrap();
         w.write(0xfeedfacedeadbeef as u64)?;
         w.write(0xdeedbead as u32)?;
@@ -44,9 +44,10 @@ fn immediate_only_write_little_endian() {
         w.write(0xff as u8)?;
         w.write(&b"hello"[..])?;
         w.write(cstr)?;
-        Ok(())
+        Ok(9)
     })
     .unwrap();
+    assert_eq!(got_ret, 9);
     assert_eq_hex!(
         buf,
         vec![
@@ -142,7 +143,7 @@ fn align() {
 #[test]
 fn derive() {
     let mut buf = Vec::<u8>::new();
-    write_vec_be(&mut buf, |w| {
+    let ret_sum = write_vec_be(&mut buf, |w| {
         w.write(0x01 as u8)?;
         w.write(0x02 as u8)?;
         let sum = w.derive(0..2, |r| {
@@ -160,8 +161,9 @@ fn derive() {
             Ok(buf[0] + buf[1])
         })?;
         w.write(sum)?;
-        Ok(())
+        Ok(sum)
     })
     .unwrap();
     assert_eq_hex!(buf, vec![0x01, 0x02, 0x03]);
+    assert_eq!(ret_sum, 3);
 }
