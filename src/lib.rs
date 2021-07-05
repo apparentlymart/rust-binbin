@@ -104,21 +104,21 @@ use endian::{BigEndian, Endian, LittleEndian};
 /// The given function -- generally a closure -- establishes the lifetime for
 /// any deferred values, so that `write_le` can ensure that all
 /// deferred values are taken care of before returning.
-pub fn write_le<W, F>(w: &mut W, f: F) -> Result<usize>
+pub fn write_le<W, F, R>(w: &mut W, f: F) -> Result<R>
 where
     W: Write + Seek,
-    F: FnOnce(&mut Writer<&mut W, LittleEndian>) -> Result<()>,
+    F: FnOnce(&mut Writer<&mut W, LittleEndian>) -> Result<R>,
 {
-    write::<_, _, LittleEndian>(w, f)
+    write::<_, _, LittleEndian, _>(w, f)
 }
 
 /// Writes arbitrary binary data into a byte vector using the given
 /// function `f`, writing little-endian by default.
-pub fn write_vec_le<F>(into: &mut Vec<u8>, f: F) -> Result<()>
+pub fn write_vec_le<F, R>(into: &mut Vec<u8>, f: F) -> Result<R>
 where
-    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, LittleEndian>) -> Result<()>,
+    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, LittleEndian>) -> Result<R>,
 {
-    write_buf::<_, LittleEndian>(into, f)
+    write_vec::<_, LittleEndian, _>(into, f)
 }
 
 /// Writes arbitrary binary data to the given writer `w` using the given
@@ -127,45 +127,47 @@ where
 /// The given function -- generally a closure -- establishes the lifetime for
 /// any deferred values, so that `write_be` can ensure that all
 /// deferred values are taken care of before returning.
-pub fn write_be<W, F>(w: &mut W, f: F) -> Result<usize>
+pub fn write_be<W, F, R>(w: &mut W, f: F) -> Result<R>
 where
     W: Write + Seek,
-    F: FnOnce(&mut Writer<&mut W, BigEndian>) -> Result<()>,
+    F: FnOnce(&mut Writer<&mut W, BigEndian>) -> Result<R>,
 {
-    write::<_, _, BigEndian>(w, f)
+    write::<_, _, BigEndian, _>(w, f)
 }
 
 /// Writes arbitrary binary data into a byte vector using the given
 /// function `f`, writing big-endian by default.
-pub fn write_vec_be<F>(into: &mut Vec<u8>, f: F) -> Result<()>
+pub fn write_vec_be<F, R>(into: &mut Vec<u8>, f: F) -> Result<R>
 where
-    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, BigEndian>) -> Result<()>,
+    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, BigEndian>) -> Result<R>,
 {
-    write_buf::<_, BigEndian>(into, f)
+    write_vec::<_, BigEndian, _>(into, f)
 }
 
-fn write<W, F, E>(w: &mut W, f: F) -> Result<usize>
+/// Generic equivalent of [`write_le`](write_le) and [`write_be`](write_be),
+/// with endianness selected by a type parameter.
+pub fn write<W, F, E, R>(w: &mut W, f: F) -> Result<R>
 where
     W: Write + Seek,
-    F: FnOnce(&mut Writer<&mut W, E>) -> Result<()>,
+    F: FnOnce(&mut Writer<&mut W, E>) -> Result<R>,
     E: Endian,
 {
-    let start_pos = w.stream_position()?;
     let mut wr = Writer::new(w);
-    f(&mut wr)?;
-    let w = wr.finalize()?;
-    let end_pos = w.stream_position()?;
-    return Ok((end_pos - start_pos) as usize);
+    let ret = f(&mut wr)?;
+    wr.finalize()?;
+    return Ok(ret);
 }
 
-fn write_buf<F, E>(into: &mut Vec<u8>, f: F) -> Result<()>
+/// Generic equivalent of [`write_vec_le`](write_vec_le) and
+/// [`write_vec_be`](write_vec_be), with endianness selected by a type
+/// parameter.
+pub fn write_vec<F, E, R>(into: &mut Vec<u8>, f: F) -> Result<R>
 where
-    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, E>) -> Result<()>,
+    F: FnOnce(&mut Writer<&mut std::io::Cursor<&mut Vec<u8>>, E>) -> Result<R>,
     E: Endian,
 {
     let mut cursor = std::io::Cursor::new(into);
-    write(&mut cursor, f)?;
-    return Ok(());
+    write(&mut cursor, f)
 }
 
 /// Wraps a seekable writer with extra functions to conveniently write
